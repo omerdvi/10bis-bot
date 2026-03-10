@@ -1,0 +1,13 @@
+{
+  "name": "10bis-bot",
+  "version": "1.0.0",
+  "description": "10bis daily credit loader — Telegram bot",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "node-cron": "^4.2.1",
+    "playwright": "^1.49.0"
+  }
+}

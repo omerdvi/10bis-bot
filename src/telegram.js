@@ -64,7 +64,9 @@ function start() {
     return false;
   }
   (async function loop() {
-    try { await poll(); } catch (e) {}
+    try { await poll(); } catch (e) {
+      await new Promise(r => setTimeout(r, 3000)); // back off on error
+    }
     setImmediate(loop);
   })();
   console.log(`[Telegram] Bot ready — chat ID: ${cfg.telegramChatId || '(send /start to register)'}`);

@@ -53,7 +53,18 @@ function startCron() {
   cronJob = cron.schedule(expr, () => {
     if (loadInProgress) return;
     loadInProgress = true;
-    runCreditLoad('scheduler').finally(() => { loadInProgress = false; });
+    runCreditLoad('scheduler')
+      .then(async result => {
+        if (result.success) {
+          await telegram.send(`✅ טעינה אוטומטית: ${result.message}`);
+        } else if (result.needsLogin) {
+          // login flow already sends its own messages
+        } else {
+          await telegram.send(`ℹ️ ${result.message}`);
+        }
+      })
+      .catch(async err => telegram.send(`❌ שגיאה בטעינה אוטומטית: ${err.message}`))
+      .finally(() => { loadInProgress = false; });
   }, { timezone: 'Asia/Jerusalem' });
   log(`Cron scheduled: ${expr} (${dayLabel(cfg.scheduleDays)} ${cfg.scheduleTime})`);
 }
@@ -438,6 +449,40 @@ telegram.onMessage(async text => {
   await telegram.send('אין תהליך התחברות פעיל.\nשלח /balance לבדיקת יתרה או /help לעזרה.');
 });
 
+// ── Missed-load detection ────────────────────────────────────────────────────
+function shouldRunMissedLoad() {
+  const cfg = loadConfig();
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jerusalem' }));
+  const day = now.getDay(); // 0=Sun ... 6=Sat
+
+  // Parse scheduled days range (e.g. "1-5")
+  const [dayStart, dayEnd] = cfg.scheduleDays.split('-').map(Number);
+  const isScheduledDay = day >= dayStart && day <= dayEnd;
+  if (!isScheduledDay) return false;
+
+  // Parse scheduled time
+  const [schedH, schedM] = cfg.scheduleTime.split(':').map(Number);
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const schedMinutes   = schedH * 60 + schedM;
+
+  // Only if we're past the scheduled time but within same day (< 24h window)
+  if (currentMinutes <= schedMinutes) return false;
+
+  // Check if a load already ran today by scanning the log
+  const today = now.toISOString().slice(0, 10); // YYYY-MM-DD
+  try {
+    const logContent = fs.readFileSync(LOG_FILE, 'utf8');
+    const lines = logContent.split('\n');
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i];
+      if (!line.includes(today)) continue;
+      if (line.includes('credit load triggered')) return false; // already ran today
+    }
+  } catch (e) {} // no log file = never ran
+
+  return true;
+}
+
 // ── Startup ───────────────────────────────────────────────────────────────────
 function main() {
   if (!fs.existsSync(CONFIG_FILE)) {
@@ -451,14 +496,28 @@ function main() {
   telegram.start();
   startCron();
 
-  // Startup session check
+  // Startup session check + missed-load detection
   if (sessionExists()) {
     checkBalance().then(async data => {
       if (data.loggedIn) {
         log(`Startup: session OK (remaining=₪${data.remaining} credit=₪${data.credit})`);
+
+        // Check if we missed the scheduled load (PC was off at 16:00)
+        if (shouldRunMissedLoad() && data.canLoad) {
+          log('Startup: missed scheduled load detected — running now');
+          await telegram.send('⏰ המחשב היה כבוי בזמן הטעינה — מבצע טעינה עכשיו...');
+          loadInProgress = true;
+          runCreditLoad('missed-load')
+            .then(async result => {
+              if (result.success) await telegram.send(`✅ טעינה שהוחמצה: ${result.message}`);
+              else if (!result.needsLogin) await telegram.send(`⚠️ ${result.message}`);
+            })
+            .catch(async err => telegram.send(`❌ שגיאה: ${err.message}`))
+            .finally(() => { loadInProgress = false; });
+        }
       } else if (!data.reason?.includes('520')) {
         log(`Startup: session expired (${data.reason}) — starting login`);
-        pendingLoad = true;
+        pendingLoad = shouldRunMissedLoad(); // only set pending if we actually missed a load
         if (!loginStartInProgress) {
           loginStartInProgress = true;
           startLoginFlow()

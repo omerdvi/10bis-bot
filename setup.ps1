@@ -69,10 +69,11 @@ while ($true) {
 # Telegram bot token
 Write-Host ''
 Write-Host 'Create a Telegram bot:' -ForegroundColor Cyan
-Write-Host '  1. Open Telegram and search for @BotFather'
-Write-Host '  2. Send /newbot'
-Write-Host '  3. Choose a name and username (must end with bot)'
-Write-Host '  4. Copy the token you receive'
+Write-Host '  1. Open Telegram and search for @BotFather' -ForegroundColor White
+Write-Host '  2. Send him /newbot' -ForegroundColor White
+Write-Host '  3. Choose a display name (e.g. "My 10bis Bot")' -ForegroundColor White
+Write-Host '  4. Choose a username ending with "bot" (e.g. my_10bis_bot)' -ForegroundColor White
+Write-Host '  5. Copy the token you receive (looks like 123456789:ABCdef...)' -ForegroundColor White
 Write-Host ''
 $token = ''
 while ($true) {
